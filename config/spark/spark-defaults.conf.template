@@ -1,0 +1,13 @@
+spark.master                     spark://${MASTER_HOST}:7077
+spark.executor.memory             ${SPARK_EXECUTOR_MEMORY}
+spark.executor.cores              1
+spark.cores.max                   ${SPARK_MAX_CORES}
+spark.driver.memory               1g
+spark.driver.host                 ${MASTER_TAILSCALE_IP}
+spark.driver.bindAddress           0.0.0.0
+spark.driver.port                 39000
+spark.blockManager.port            39001
+spark.port.maxRetries              64
+spark.sql.shuffle.partitions       4
+spark.serializer                   org.apache.spark.serializer.KryoSerializer
+spark.eventLog.enabled             false

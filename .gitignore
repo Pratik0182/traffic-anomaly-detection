@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.env
+*.pyc
+logs/
+checkpoints/
+data/
+reports/
+.DS_Store
+
+# Private node addresses and deployment values
+config/cluster.env
