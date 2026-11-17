@@ -2,7 +2,7 @@
 
 **Course:** CSBB422 – Big Data Analytics Lab Project  
 **Repository:** [https://github.com/Pratik0182/traffic-anomaly-detection](https://github.com/Pratik0182/traffic-anomaly-detection)  
-**Team Size:** 3 Members  
+**Team Size:** 4 Members  
 **Deployment Target:** 3-Node Physical Distributed Cluster (1 Master + 2 Workers)
 
 ---
