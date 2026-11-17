@@ -45,7 +45,7 @@ This project implements an end-to-end distributed Big Data pipeline that:
 | Role | Primary Responsibilities |
 |---|---|
 | **Member 1 – Infrastructure & Networking** | 3-PC private networking (Tailscale / LAN), Hadoop HDFS configuration (NameNode/DataNodes), Spark cluster setup (Master/Workers), Kafka KRaft quorum, and node verification scripts. |
-| **Member 2 – Data Engineering & Streaming** | Traffic event contract & generator, Kafka producer integration, Spark Structured Streaming pipelines, HBase schema & deterministic row keys, and statistical anomaly detection algorithms. |
+| **Member 2 and Member 4 – Data Engineering & Streaming** | Traffic event contract & generator, Kafka producer integration, Spark Structured Streaming pipelines, HBase schema & deterministic row keys, and statistical anomaly detection algorithms. |
 | **Member 3 – Application & Integration** | Streamlit multi-view dashboard, Plotly interactive data visualizations, Spark batch analytics, HDFS historical report ingestion, and documentation. |
 
 ---
@@ -260,7 +260,7 @@ The dashboard (`dashboard/app.py`) provides 8 dedicated tabs built with Plotly:
 - **Q: What happens if one of the worker nodes goes offline during the demonstration?**
   *A:* Because HDFS block replication is 2, all blocks remain available on the surviving DataNode. For Kafka, since `min.insync.replicas` is 2 and replication is 3, the cluster continues acknowledging writes as long as 2 brokers remain synchronized. Spark continues scheduling tasks on the remaining active worker.
 
-### Viva Questions for Member 2 (Data Engineering & Streaming)
+### Viva Questions for Member 2 and Member 4 (Data Engineering & Streaming)
 
 - **Q: Why use `approx_count_distinct` instead of `countDistinct` in Spark Streaming?**
   *A:* Exact distinct counting requires storing all unique keys seen across unbounded streaming state in memory, which quickly causes JVM `OutOfMemoryError`. Spark Structured Streaming prohibits non-watermarked exact distinct aggregations on streaming datasets. We use `approx_count_distinct` based on the HyperLogLog algorithm, which provides a guaranteed standard deviation error (0.05) with constant, bounded memory usage.
