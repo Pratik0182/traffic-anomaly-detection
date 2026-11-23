@@ -1,280 +1,263 @@
 # Real-Time Website Traffic Analytics & Anomaly Detection
 
-**Course:** CSBB422 – Big Data Analytics Lab Project  
-**Repository:** [https://github.com/Pratik0182/traffic-anomaly-detection](https://github.com/Pratik0182/traffic-anomaly-detection)  
-**Team Size:** 4 Members  
-**Deployment Target:** 3-Node Physical Distributed Cluster (1 Master + 2 Workers)
+A CSBB 422 Big Data project that generates synthetic website request events, ingests
+them through Apache Kafka, processes them with Spark Structured Streaming, stores raw
+events in Hadoop HDFS and processed metrics in HBase, and presents live/historical
+analytics in Streamlit.
 
----
+> Traffic is simulated for a repeatable academic demonstration; it is not captured
+> from a real production website.
 
-## 1. Project Overview
+## Project status
 
-This project implements an end-to-end distributed Big Data pipeline that:
-1. Simulates realistic website traffic events (normal navigation, repeated visits, error bursts, and latency spikes).
-2. Ingests events in real time using a 3-broker **Apache Kafka** cluster running in KRaft mode.
-3. Processes streaming event windows using **Apache Spark Structured Streaming** with event-time watermarking and checkpoints.
-4. Archives raw immutable event logs in **Hadoop HDFS** as partitioned Parquet datasets.
-5. Upserts rolling window aggregates and anomaly alerts into **Apache HBase** via deterministic row keys.
-6. Computes historical batch aggregations using **Apache Spark Batch Processing**.
-7. Visualizes real-time metrics and historical trends across an 8-page interactive **Streamlit + Plotly** dashboard.
+- [x] Event schema, synthetic traffic generator and Kafka producer
+- [x] Spark Structured Streaming: HDFS raw-event archive + HBase summary/page/status metrics
+- [x] Separate checkpoint locations for the four streaming queries
+- [x] HBase Thrift helpers, deterministic row keys and retry-safe absolute upserts
+- [x] Spark batch analytics over HDFS Parquet
+- [x] Streamlit live dashboard and HDFS historical reports
+- [x] Unit tests for event schema, row keys, Spark callbacks and rendered cluster templates
+- [x] Three-node Hadoop/Spark/Kafka/HBase configuration templates
+- [x] Three-node installation, formatting, startup and verification scripts
+- [ ] End-to-end execution on the team's actual three PCs
 
-```
-       [ Website Traffic Simulator ]
-                     │
-                     ▼
-          [ Apache Kafka Topic ]
-            (website_traffic)
-                     │
-                     ▼
-    [ Apache Spark Structured Streaming ]
-        (1-min windows, 2-min watermark)
-             │                      │
-             ▼                      ▼
-      [ Hadoop HDFS ]        [ Apache HBase ]
-   (Raw Parquet Logs)       (Metrics & Alerts)
-             │                      │
-             ▼                      ▼
-    [ Spark Batch Job ]     [ Streamlit Dashboard ]
-   (Historical Reports)     (Plotly Interactive UI)
-```
+## Compatibility baseline
 
----
+Keep the same versions on all three Ubuntu VMs. This is a pinned academic-project
+baseline, not a claim that every component is the newest available release.
 
-## 2. Team Member Responsibilities
-
-| Role | Primary Responsibilities |
+| Component | Target |
 |---|---|
-| **Member 1 – Infrastructure & Networking** | 3-PC private networking (Tailscale / LAN), Hadoop HDFS configuration (NameNode/DataNodes), Spark cluster setup (Master/Workers), Kafka KRaft quorum, and node verification scripts. |
-| **Member 2 and Member 4 – Data Engineering & Streaming** | Traffic event contract & generator, Kafka producer integration, Spark Structured Streaming pipelines, HBase schema & deterministic row keys, and statistical anomaly detection algorithms. |
-| **Member 3 – Application & Integration** | Streamlit multi-view dashboard, Plotly interactive data visualizations, Spark batch analytics, HDFS historical report ingestion, and documentation. |
+| Host OS | Windows 10/11 |
+| Linux runtime | Ubuntu Server 22.04 LTS VM on each PC |
+| Java | OpenJDK 11 |
+| Python | 3.10 |
+| Hadoop | 3.3.6 |
+| Spark | 3.5.3, Scala 2.12 build |
+| Spark Kafka connector | `org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3` |
+| Kafka | 3.7.2, KRaft mode |
+| HBase | 2.5.16, Hadoop 3 binary |
+| Streamlit | 1.41.1 |
 
----
+Compatibility-sensitive choices:
+- Spark 3.5.3 and the Kafka connector must use the same Spark version and Scala binary
+  version (`_2.12`).
+- HBase 2.5.x supports Hadoop 3.3.5+; the deployment uses Hadoop 3.3.6.
+- Use the HBase archive ending in `-hadoop3-bin.tar.gz`, not the Hadoop 2 build.
+- Python 3.10 is the Ubuntu 22.04 system version and is supported by PySpark 3.5.3.
+- Kafka uses three KRaft controllers and three brokers; all three nodes share one
+  generated Kafka cluster ID.
 
-## 3. Technology Stack & Compatibility Baseline
+Official references:
+- [Spark 3.5.3](https://spark.apache.org/docs/3.5.3/)
+- [Spark Structured Streaming](https://spark.apache.org/docs/3.5.3/structured-streaming-programming-guide.html)
+- [Hadoop 3.3.6 cluster setup](https://hadoop.apache.org/docs/r3.3.6/hadoop-project-dist/hadoop-common/ClusterSetup.html)
+- [HBase compatibility prerequisites](https://hbase.apache.org/docs/configuration/basic-prerequisites/)
+- [Kafka 3.7 KRaft mode](https://kafka.apache.org/37/operations/kraft/)
 
-All three nodes run identical pinned versions inside Ubuntu Server 22.04 LTS VMs:
-
-| Component | Pinned Version | Architectural Role |
-|---|---|---|
-| **Host Operating System** | Windows 10 / 11 | Physical machine layer hosting the virtual nodes |
-| **Guest OS / Runtime** | Ubuntu Server 22.04 LTS | Standardized Linux environment across all 3 PCs |
-| **Java** | OpenJDK 11 | Required runtime for Hadoop 3.3.6 and Spark 3.5.3 |
-| **Python** | Python 3.10 | Native Ubuntu 22.04 Python runtime |
-| **Hadoop HDFS** | 3.3.6 | Distributed storage (1 NameNode on PC1, 2 DataNodes on PC2 & PC3) |
-| **Apache Kafka** | 3.7.2 (KRaft mode) | Real-time event ingestion; eliminates ZooKeeper for Kafka |
-| **Apache Spark** | 3.5.3 (Scala 2.12) | Structured Streaming engine and offline batch processor |
-| **Kafka Connector** | `spark-sql-kafka-0-10_2.12:3.5.3` | Spark-to-Kafka streaming ingestion connector |
-| **Apache HBase** | 2.5.16 (`-hadoop3-bin`) | Real-time NoSQL storage for aggregated metrics and alerts |
-| **Streamlit & Plotly** | Streamlit 1.41.1, Plotly 5.24.1 | Interactive operational dashboard |
-
----
-
-## 4. Distributed Cluster Topology (3 Physical Nodes)
-
-```
-=============================================================================
-PC 1: MASTER NODE (`master`)
-  • Hadoop NameNode (:9000, Web UI :9870)
-  • Spark Master (:7077, Web UI :8080)
-  • Kafka Broker & KRaft Controller 1 (:9092, :9093)
-  • HBase Master (:16000, Web UI :16010) + HBase ZooKeeper (:2181)
-  • HBase Thrift Gateway (:9090)
-  • Streamlit Web Dashboard (:8501)
------------------------------------------------------------------------------
-PC 2: WORKER NODE 1 (`worker1`)
-  • HDFS DataNode (:9864)
-  • Spark Worker (2 cores, 2 GB RAM)
-  • Kafka Broker & KRaft Controller 2 (:9092, :9093)
-  • HBase RegionServer (:16020, Web UI :16030)
------------------------------------------------------------------------------
-PC 3: WORKER NODE 2 (`worker2`)
-  • HDFS DataNode (:9864) + HDFS SecondaryNameNode (:9868)
-  • Spark Worker (2 cores, 2 GB RAM)
-  • Kafka Broker & KRaft Controller 3 (:9092, :9093)
-  • HBase RegionServer (:16020, Web UI :16030)
-  • Traffic Simulator (publishes to Kafka cluster)
-=============================================================================
-```
-
----
-
-## 5. Repository Structure
+## Repository layout
 
 ```text
-traffic-anomaly-detection/
-├── common/
-│   ├── event_schema.py             # Event data contract, validation, user agents & methods
-│   └── __init__.py
-├── data-generator/
-│   └── traffic_generator.py        # Realistic multi-session simulator with anomaly injection
-├── kafka_client/
-│   ├── producer.py                 # KafkaProducer wrapper with retry & exponential backoff
-│   └── __init__.py
+website-traffic-dashboard/
+├── common/                         # Shared event contract
+├── data-generator/                 # Synthetic Kafka traffic generator
+├── kafka_client/                   # kafka-python producer wrapper
 ├── spark/
-│   ├── streaming_processor.py      # Structured Streaming: 4 queries (HDFS Parquet + HBase)
-│   ├── batch_processor.py          # Offline batch aggregations over HDFS raw Parquet
-│   └── anomaly_detector.py         # Multi-criteria statistical & threshold anomaly rules
+│   ├── streaming_processor.py      # Kafka -> HDFS + HBase
+│   └── batch_processor.py          # HDFS historical reports
 ├── hbase/
-│   ├── database_operations.py      # HappyBase / Thrift table init, upserts, and scanning
-│   └── __init__.py
+│   └── database_operations.py      # Thrift table and row operations
 ├── dashboard/
-│   └── app.py                      # 8-section interactive Streamlit & Plotly application
+│   └── app.py                      # Streamlit UI
 ├── config/
-│   ├── cluster.env.example         # 3-node network IPs & host configuration
-│   ├── app.env.distributed.example # Master node runtime environment template
-│   ├── hadoop/                     # core-site.xml, hdfs-site.xml, workers templates
-│   ├── spark/                      # spark-env.sh, spark-defaults.conf, workers templates
-│   ├── kafka/                      # server.properties KRaft template
-│   └── hbase/                      # hbase-site.xml, hbase-env.sh, regionservers templates
-├── scripts/                        # Automated node setup, formatting, startup, and checks
-│   ├── check_cluster.sh            # One-click health check for all cluster services
-│   ├── configure_node.sh           # Renders configuration files for master/worker1/worker2
-│   ├── install_stack.sh            # Downloads & verifies Hadoop, Spark, Kafka, HBase
-│   ├── start_hdfs_node.sh          # Starts NameNode, SecondaryNameNode, or DataNodes
-│   ├── start_kafka_node.sh         # Starts KRaft broker daemon
-│   ├── start_spark_node.sh         # Starts Spark Master or Workers
-│   ├── start_hbase_node.sh         # Starts HBase Master, RegionServers, Thrift
-│   ├── start_streaming.sh          # Submits Spark streaming job to cluster
-│   ├── run_batch.sh                # Submits Spark batch analytics job
-│   └── run_dashboard.sh            # Launches Streamlit dashboard
+│   ├── cluster.env.example
+│   ├── app.env.distributed.example
+│   ├── hadoop/                     # Hadoop XML and workers templates
+│   ├── spark/                      # Spark env/defaults/workers templates
+│   ├── kafka/                      # KRaft broker/controller template
+│   └── hbase/                      # HBase site/env/regionservers templates
+├── scripts/                        # Node prep, config, startup, checks
 ├── docs/
-│   └── THREE_NODE_DEPLOYMENT.md    # Comprehensive step-by-step 3-node cluster guide
+│   └── THREE_NODE_DEPLOYMENT.md
+├── hadoop/configuration/
 ├── tests/
-│   ├── test_event_schema.py        # Event schema and validation unit tests
-│   ├── test_hbase_keys.py          # Deterministic row-key generation tests
-│   ├── test_streaming_helpers.py   # ForeachBatch Spark upsert callback tests
-│   ├── test_anomaly_detector.py    # Anomaly detection rule tests
-│   └── test_config_templates.py    # XML and property file template rendering tests
-├── .env.example                    # Local single-machine environment template
-├── .gitignore                      # Git exclusion rules
-├── requirements.txt                # Pinned Python dependencies
-└── README.md                       # Project documentation and viva guide
+├── .env.example
+├── requirements.txt
+└── README.md
 ```
 
----
+## 1. Python environment
 
-## 6. Getting Started
+Python 3.10 is the target for the Ubuntu VMs and local Windows development.
 
-### Option A: Local Single-Machine Development
+### Windows PowerShell
 
-1. **Clone the repository and prepare the virtual environment:**
-   ```bash
-   git clone https://github.com/Pratik0182/traffic-anomaly-detection.git
-   cd traffic-anomaly-detection
-   python3 -m venv .venv
-   source .venv/bin/activate
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   cp .env.example .env
-   ```
+```powershell
+py -3.10 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+Copy-Item .env.example .env
+```
 
-2. **Run all unit tests:**
-   ```bash
-   pytest tests -v
-   ```
+### Ubuntu
 
-3. **Start local Kafka & initialize HBase tables:**
-   ```bash
-   # Create Kafka topic
-   kafka-topics.sh --bootstrap-server localhost:9092 --create --if-not-exists \
-     --topic website_traffic --partitions 3 --replication-factor 1
+```bash
+python3.10 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+cp .env.example .env
+```
 
-   # Initialize HBase tables via Thrift
-   hbase-daemon.sh start thrift
-   python -m hbase.database_operations init
-   python -m hbase.database_operations check
-   ```
+## 2. Single-machine smoke test
 
-4. **Launch Spark Structured Streaming:**
-   ```bash
-   spark-submit \
-     --master 'local[2]' \
-     --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3 \
-     spark/streaming_processor.py
-   ```
+For the first application test, run Kafka and HBase locally, then:
 
-5. **Generate test traffic:**
-   ```bash
-   # Normal traffic
-   python data-generator/traffic_generator.py --rate 5
+1. Create the Kafka topic:
 
-   # Traffic spike demo
-   python data-generator/traffic_generator.py --rate 5 --spike-after-seconds 10 --spike-rate 45
+```bash
+kafka-topics.sh --bootstrap-server localhost:9092 \
+  --create --if-not-exists --topic website_traffic \
+  --partitions 3 --replication-factor 1
+```
 
-   # Error surge demo
-   python data-generator/traffic_generator.py --rate 5 --inject-errors
+2. Start HBase and its Thrift service, then create the application tables:
 
-   # Latency spike demo
-   python data-generator/traffic_generator.py --rate 5 --slow-responses
-   ```
+```bash
+hbase-daemon.sh start thrift
+python -m hbase.database_operations init
+python -m hbase.database_operations check
+```
 
-6. **Run batch job & launch dashboard:**
-   ```bash
-   spark-submit --master 'local[2]' spark/batch_processor.py
-   streamlit run dashboard/app.py
-   ```
+3. Start Spark Structured Streaming:
 
----
+```bash
+spark-submit \
+  --master 'local[2]' \
+  --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3 \
+  spark/streaming_processor.py
+```
 
-### Option B: 3-Node Physical Cluster Deployment
+4. In another terminal, generate traffic:
 
-Follow the complete, ordered guide in [`docs/THREE_NODE_DEPLOYMENT.md`](docs/THREE_NODE_DEPLOYMENT.md):
-1. **Host Configuration:** Assign static hostnames (`master`, `worker1`, `worker2`) and configure private network IP addresses.
-2. **Software Stack Installation:** Execute `sudo bash scripts/install_stack.sh` on all nodes to install Hadoop 3.3.6, Spark 3.5.3, Kafka 3.7.2, and HBase 2.5.16 with verified checksums.
-3. **Template Rendering:** Render cluster configuration files on each node via `bash scripts/configure_node.sh <node-role> config/cluster.env`.
-4. **One-Time Formatting:**
-   - On master: Format HDFS NameNode (`bash scripts/format_hdfs_namenode_once.sh`).
-   - On all nodes: Format Kafka KRaft storage with the shared cluster ID (`bash scripts/format_kafka_node_once.sh <ID>`).
-5. **Daemon Startup Sequence:**
-   1. HDFS: `scripts/start_hdfs_node.sh` (Master first, then workers).
-   2. Kafka: `scripts/start_kafka_node.sh` on all 3 nodes; create topic with `scripts/create_kafka_topic.sh`.
-   3. Spark: `scripts/start_spark_node.sh` (Master first, then workers).
-   4. HBase: `scripts/start_hbase_node.sh` (Master first, then workers).
-6. **Streaming & Analytics:** Run `scripts/start_streaming.sh` on master and launch the traffic generator on PC3.
+```bash
+python data-generator/traffic_generator.py --rate 5
+```
 
----
+To trigger a spike:
 
-## 7. Streamlit Dashboard (8 Analytical Views)
+```bash
+python data-generator/traffic_generator.py \
+  --rate 5 --spike-after-seconds 15 \
+  --spike-duration-seconds 30 --spike-rate 40
+```
 
-The dashboard (`dashboard/app.py`) provides 8 dedicated tabs built with Plotly:
+5. Inspect HBase and HDFS output, then run batch analytics:
 
-1. **Overview:** Executive KPIs (Requests/min, Unique Visitors, Error Percentage, Avg Response Time, Traffic State) with side-by-side volume and HTTP status donut charts.
-2. **Live Traffic Monitoring:** Event-time 1-minute window area chart with visible spike threshold annotations and recent window telemetry tables.
-3. **Visitor Analytics:** Unique visitors vs total requests, user engagement depth (requests/visitor ratio), and HyperLogLog methodology notes.
-4. **Page Analytics:** Horizontal bar chart of top requested endpoints and route traffic share percentages.
-5. **HTTP Error Monitoring:** Error percentage over time, 4xx client errors vs 5xx server errors comparison, and status distribution breakdown.
-6. **Anomaly Detection:** Real-time alert log from HBase displaying `TRAFFIC_SPIKE`, `HIGH_ERROR_RATE`, and `HIGH_LATENCY` alerts with `CRITICAL`/`WARNING` severity badges, observed values, thresholds, and diagnostic reasons.
-7. **Historical Reports (HDFS):** Date range filtering over offline Spark batch reports (`daily_summary`, `hourly_summary`, `top_pages`, `response_time_trend` with average and p95 latency).
-8. **System / Cluster Status:** Physical 3-node topology overview, daemon endpoint directory, live HBase Thrift connection probe, and viva terminal commands.
+```bash
+python -m hbase.database_operations scan --type summary --limit 10
+spark-submit --master 'local[2]' spark/batch_processor.py
+streamlit run dashboard/app.py
+```
 
----
+The `.env.example` defaults use local filesystem paths for raw events, checkpoints and
+reports. For HDFS, use the distributed environment template described below.
 
-## 8. Academic Viva / Oral Exam Preparation Guide
+## 3. Three-PC deployment
 
-### Viva Questions for Member 1 (Infrastructure & Cluster)
+The recommended final cluster has:
 
-- **Q: Why was Kafka KRaft mode chosen instead of ZooKeeper?**
-  *A:* Starting with Kafka 3.3, KRaft (Kafka Raft Metadata mode) is production-ready. It manages cluster metadata internally using an active controller quorum, removing the operational overhead and failure modes of maintaining a separate external ZooKeeper cluster for Kafka.
-- **Q: Why is `dfs.replication` set to 2 instead of the Hadoop default of 3?**
-  *A:* Our physical cluster has exactly two DataNodes (`worker1` and `worker2`). Setting replication to 3 would cause HDFS to continuously report under-replicated block warnings because a block cannot place two replicas on the same physical DataNode.
-- **Q: What happens if one of the worker nodes goes offline during the demonstration?**
-  *A:* Because HDFS block replication is 2, all blocks remain available on the surviving DataNode. For Kafka, since `min.insync.replicas` is 2 and replication is 3, the cluster continues acknowledging writes as long as 2 brokers remain synchronized. Spark continues scheduling tasks on the remaining active worker.
+- PC1 / `master`: HDFS NameNode, Spark Master, HBase Master, HBase-managed ZooKeeper,
+  HBase Thrift, and Streamlit/Spark driver.
+- PC2 / `worker1`: HDFS DataNode, Spark Worker, HBase RegionServer, Kafka broker/controller.
+- PC3 / `worker2`: HDFS DataNode + SecondaryNameNode, Spark Worker, HBase RegionServer,
+  Kafka broker/controller, and traffic generator.
+- All three PCs: Kafka broker + KRaft controller.
 
-### Viva Questions for Member 2 and Member 4 (Data Engineering & Streaming)
+The Kafka topic uses 3 partitions, replication factor 3 and minimum in-sync replicas 2.
+HDFS has two DataNodes and replication factor 2.
 
-- **Q: Why use `approx_count_distinct` instead of `countDistinct` in Spark Streaming?**
-  *A:* Exact distinct counting requires storing all unique keys seen across unbounded streaming state in memory, which quickly causes JVM `OutOfMemoryError`. Spark Structured Streaming prohibits non-watermarked exact distinct aggregations on streaming datasets. We use `approx_count_distinct` based on the HyperLogLog algorithm, which provides a guaranteed standard deviation error (0.05) with constant, bounded memory usage.
-- **Q: How does the system handle duplicate writes if a Spark micro-batch fails and retries?**
-  *A:* HBase writes are designed to be idempotent. We do not use atomic increments. Instead, we use deterministic compound row keys (`metric_type#window_key#dimension`) and write absolute metrics via HBase `PUT` semantics. A retried micro-batch simply overwrites the exact same row.
-- **Q: What anomaly detection rules are evaluated?**
-  *A:* Three statistical and threshold rules are evaluated per 1-minute window:
-  1. *Traffic Spike:* Requests/min exceed the configured baseline threshold (e.g., > 600 req/min).
-  2. *Error Rate Surge:* Combined 4xx + 5xx error rate exceeds 15% with >= 20 total requests.
-  3. *Latency Anomaly:* Average server response latency exceeds 600 ms.
+Read the complete, ordered instructions in
+[`docs/THREE_NODE_DEPLOYMENT.md`](docs/THREE_NODE_DEPLOYMENT.md). It covers:
+- Ubuntu VM preparation and Tailscale/private networking;
+- verified software downloads;
+- configuration rendering for each node;
+- safe one-time HDFS/Kafka formatting;
+- daemon startup order;
+- Spark/HBase configuration;
+- traffic generation, dashboard and batch report commands;
+- demo sequence and recovery cautions.
 
-### Viva Questions for Member 3 (Application & Dashboard)
+Important: do not run HDFS NameNode format or Kafka storage format on an existing cluster.
 
-- **Q: How does the dashboard read live metrics vs historical reports?**
-  *A:* Live metrics are queried from HBase through the HappyBase Thrift gateway every 10 seconds for real-time responsiveness. Historical reports are precomputed by Spark batch jobs over raw Parquet logs stored in HDFS and written as JSON summaries, which Streamlit loads via the Hadoop CLI or local path fallback.
-- **Q: What is the difference between event time and processing time?**
-  *A:* Processing time is the wall-clock time on the computer running the Spark streaming job. Event time is the actual timestamp embedded in the event when the user made the web request. We group by event-time windows and use a 2-minute watermark to accurately place late-arriving events into their correct historical time window.
+## 4. Streaming design
+
+The Spark application starts four independent streaming queries:
+
+| Query | Output | Checkpoint |
+|---|---|---|
+| Raw events | Partitioned Parquet in HDFS | `raw_events` |
+| Summary metrics | HBase `traffic_metrics` | `summary_metrics` |
+| Popular pages | HBase `traffic_metrics` | `page_metrics` |
+| HTTP status counts | HBase `traffic_metrics` | `status_metrics` |
+
+All queries use one-minute event-time windows and a two-minute watermark by default.
+Unique visitors are estimated with Spark `approx_count_distinct`; the field is explicitly
+named `unique_visitors_approx`.
+
+HBase row keys are deterministic by metric type, window and dimension. The Spark
+`foreachBatch` callbacks write absolute values with HBase PUT semantics rather than
+incrementing counters, so a retried batch overwrites the same row. Each query has a
+separate checkpoint path.
+
+The default spike threshold is 600 requests/minute:
+- Normal generator rate: 5 events/second (about 300/minute).
+- Spike rate: 40 events/second (about 2,400/minute).
+
+## 5. Historical batch reports
+
+After raw Parquet files exist, run:
+
+```bash
+spark-submit --master 'local[2]' spark/batch_processor.py
+```
+
+The distributed helper is `scripts/run_batch.sh`. Five JSON report directories are
+written below `HDFS_REPORTS_PATH`: `daily_summary`, `hourly_summary`, `top_pages`,
+`status_distribution`, and `response_time_trend`.
+
+## 6. Dashboard
+
+Run locally:
+
+```bash
+streamlit run dashboard/app.py
+```
+
+On the cluster, use `scripts/run_dashboard.sh`. The live HBase panel refreshes every
+10 seconds; historical charts read the latest JSON reports from HDFS using the Hadoop
+CLI. The dashboard host therefore needs `HADOOP_CONF_DIR` and the `hdfs` command.
+
+## 7. Tests
+
+```bash
+python -m pytest tests -v
+```
+
+Unit tests do not require live Kafka, Spark, HDFS or HBase services. They validate the
+event contract, HBase row keys, Spark callback behavior and rendered cluster templates.
+They are not an end-to-end integration test.
+
+## 8. Known limitations
+
+- The final three-PC deployment has not yet been executed on the team's actual PCs.
+- HDFS NameNode, HBase Master and the single HBase ZooKeeper instance are single points
+  of failure; this is a distributed demonstration, not HA.
+- Kafka uses combined broker/controller roles for a small academic cluster. Apache
+  recommends separating roles for critical production environments.
+- No Kerberos, TLS or application-level authentication is configured. Keep all cluster
+  traffic on a private LAN or restricted Tailscale tailnet.
+- The four Spark streaming queries each read the Kafka topic independently. This is
+  acceptable for the project's synthetic demo rate, not an optimized high-throughput
+  production design.

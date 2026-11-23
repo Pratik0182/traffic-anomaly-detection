@@ -8,10 +8,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-try:
-    from dotenv import load_dotenv
-except ImportError:
-    load_dotenv = lambda *args, **kwargs: None
+from dotenv import load_dotenv
 
 LOG = logging.getLogger("traffic-batch")
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +38,12 @@ def main():
 
     spark = (
         SparkSession.builder
+        .master(env("SPARK_MASTER", "local[*]"))
+        .config("spark.driver.host", env("SPARK_DRIVER_HOST", "127.0.0.1"))
+        .config("spark.driver.bindAddress", env("SPARK_DRIVER_BIND_ADDRESS", "0.0.0.0"))
+        .config("spark.driver.port", env("SPARK_DRIVER_PORT", "7079"))
+        .config("spark.blockManager.port", env("SPARK_BLOCKMANAGER_PORT", "7080"))
+        .config("spark.hadoop.dfs.client.use.datanode.hostname", "true")
         .appName(env("SPARK_BATCH_APP_NAME", "WebsiteTrafficBatchAnalytics"))
         .config("spark.sql.session.timeZone", "UTC")
         .config("spark.sql.shuffle.partitions", env("SPARK_SQL_SHUFFLE_PARTITIONS", "4"))

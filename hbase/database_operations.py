@@ -41,9 +41,8 @@ def metric_row_key(metric_type: str, window_start: Any,
         key += f"#{quote(str(dimension), safe='')}"
     return key.encode("utf-8")
 
-def alert_row_key(window_start: Any, alert_type: str = "spike") -> bytes:
-    prefix = "spike" if alert_type.lower() in ("spike", "traffic_spike") else f"alert_{alert_type.lower()}"
-    return f"{prefix}#{window_key(window_start)}".encode("utf-8")
+def alert_row_key(window_start: Any) -> bytes:
+    return f"spike#{window_key(window_start)}".encode("utf-8")
 
 def _connection():
     try:
@@ -108,8 +107,8 @@ def upsert_alerts(alerts: Iterable[dict[str, Any]]) -> int:
         table = conn.table(alerts_table_name())
         with table.batch(batch_size=200) as batch:
             for alert in rows:
-                key = alert_row_key(alert["window_start"], alert.get("alert_type", "spike"))
-                batch.put(key, {b"a:payload": _encode(alert)})
+                batch.put(alert_row_key(alert["window_start"]),
+                          {b"a:payload": _encode(alert)})
         return len(rows)
     finally:
         conn.close()
@@ -146,7 +145,7 @@ def read_alerts(limit: int = 100):
         ensure_tables(conn)
         table = conn.table(alerts_table_name())
         values = []
-        for row in table.scan():
+        for row in table.scan(row_prefix=b"spike#"):
             value = _payload(row, b"a")
             if value is not None:
                 value["_row_key"] = row[0].decode("utf-8", errors="replace")

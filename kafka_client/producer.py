@@ -43,7 +43,6 @@ class TrafficKafkaProducer:
                     max_in_flight_requests_per_connection=1,
                     retry_backoff_ms=500,
                     request_timeout_ms=30000,
-                    delivery_timeout_ms=120000,
                     value_serializer=lambda value: json.dumps(
                         value, separators=(",", ":"), ensure_ascii=False
                     ).encode("utf-8"),
