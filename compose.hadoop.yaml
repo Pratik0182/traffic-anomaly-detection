@@ -1,0 +1,89 @@
+services:
+  namenode-volume-init:
+    image: busybox:1.36
+    user: "0:0"
+    command:
+      - sh
+      - -c
+      - mkdir -p /data/dfs/name && chown 1000:100 /data /data/dfs /data/dfs/name
+    volumes:
+      - hdfs_namenode:/data
+    restart: "no"
+
+  datanode-volume-init:
+    image: busybox:1.36
+    user: "0:0"
+    command:
+      - sh
+      - -c
+      - mkdir -p /data/dfs/data && chown 1000:100 /data /data/dfs /data/dfs/data
+    volumes:
+      - hdfs_datanode:/data
+    restart: "no"
+
+  namenode:
+    image: apache/hadoop:3.3.6
+    hostname: namenode
+    container_name: hdfs-namenode
+    entrypoint: ["/usr/local/bin/dumb-init", "--", "bash"]
+    command:
+      - -lc
+      - |
+        set -e
+        mkdir -p /data/dfs/name
+        if [ ! -f /data/dfs/name/current/VERSION ]; then
+          echo "Formatting new HDFS NameNode storage"
+          /opt/hadoop/bin/hdfs namenode -format -nonInteractive
+        fi
+        exec /opt/hadoop/bin/hdfs namenode
+    ports:
+      - "9000:9000"
+      - "9870:9870"
+    volumes:
+      - hdfs_namenode:/data
+      - ./docker/hadoop/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+      - ./docker/hadoop/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+    depends_on:
+      namenode-volume-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/hadoop/bin/hdfs dfsadmin -safemode get >/dev/null 2>&1
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - hadoop-net
+
+  datanode:
+    image: apache/hadoop:3.3.6
+    hostname: datanode
+    container_name: hdfs-datanode
+    ports:
+      - "9866:9866"
+    entrypoint: ["/usr/local/bin/dumb-init", "--", "/opt/hadoop/bin/hdfs"]
+    command: ["datanode"]
+    volumes:
+      - hdfs_datanode:/data
+      - ./docker/hadoop/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:ro
+      - ./docker/hadoop/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:ro
+    depends_on:
+      datanode-volume-init:
+        condition: service_completed_successfully
+      namenode:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hadoop-net
+
+volumes:
+  hdfs_namenode:
+  hdfs_datanode:
+
+networks:
+  hadoop-net:
+    name: website-traffic-hadoop
+    driver: bridge

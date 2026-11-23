@@ -1,0 +1,24 @@
+services:
+  spark-master:
+    image: apache/spark:3.5.3
+    container_name: spark-master
+    hostname: spark-master
+    restart: unless-stopped
+    environment:
+      SPARK_MASTER_HOST: "spark-master"
+      SPARK_MASTER_PORT: "7077"
+      SPARK_MASTER_WEBUI_PORT: "8080"
+      SPARK_PUBLIC_DNS: "100.111.62.94"
+      SPARK_NO_DAEMONIZE: "true"
+    command:
+      - /opt/spark/sbin/start-master.sh
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+    networks:
+      - hadoop-net
+
+networks:
+  hadoop-net:
+    external: true
+    name: website-traffic-hadoop

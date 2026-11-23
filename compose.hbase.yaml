@@ -1,0 +1,56 @@
+services:
+  hbase-volume-init:
+    image: busybox:1.36
+    user: "0:0"
+    command:
+      - sh
+      - -c
+      - mkdir -p /data/tmp /data/local && chown -R 1000:100 /data
+    volumes:
+      - hbase_local:/data
+    restart: "no"
+
+  zookeeper:
+    image: zookeeper:3.9.4
+    hostname: zookeeper
+    container_name: traffic-zookeeper
+    restart: unless-stopped
+    environment:
+      ZOO_MY_ID: 1
+      ZOO_STANDALONE_ENABLED: "true"
+    volumes:
+      - hbase_zookeeper_data:/data
+      - hbase_zookeeper_datalog:/datalog
+    networks:
+      - hadoop-net
+
+  hbase:
+    build:
+      context: .
+      dockerfile: docker/hbase/Dockerfile
+    image: website-traffic-hbase:2.6.7
+    hostname: hbase
+    container_name: hbase
+    user: "1000:100"
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_started
+      hbase-volume-init:
+        condition: service_completed_successfully
+    ports:
+      - "9090:9090"
+      - "16010:16010"
+    volumes:
+      - hbase_local:/data
+    networks:
+      - hadoop-net
+volumes:
+  hbase_zookeeper_data:
+  hbase_zookeeper_datalog:
+  hbase_local:
+
+networks:
+  hadoop-net:
+    external: true
+    name: website-traffic-hadoop

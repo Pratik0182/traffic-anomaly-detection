@@ -20,17 +20,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-try:
-    from dotenv import load_dotenv
-except ImportError:
-    load_dotenv = lambda *args, **kwargs: None
+from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from hbase.database_operations import upsert_alerts, upsert_metrics
-from spark.anomaly_detector import AnomalyDetector
 
 LOG = logging.getLogger("traffic-streaming")
 
@@ -51,25 +47,18 @@ def write_summary_batch(batch_df, batch_id: int, spike_threshold: int) -> None:
     rows = batch_df.collect()
     metric_records = []
     alert_records = []
-    detector = AnomalyDetector(spike_threshold=spike_threshold)
-
     for row in rows:
         start = timestamp_text(row["window_start"])
         end = timestamp_text(row["window_end"])
         requests = int(row["requests"])
-        unique_visitors = int(row["unique_visitors_approx"])
-        client_errs = int(row["client_errors_4xx"] or 0)
-        server_errs = int(row["server_errors_5xx"] or 0)
-        avg_resp = round(float(row["avg_response_time_ms"] or 0.0), 2)
-
         payload = {
             "window_start": start,
             "window_end": end,
             "requests": requests,
-            "unique_visitors_approx": unique_visitors,
-            "client_errors_4xx": client_errs,
-            "server_errors_5xx": server_errs,
-            "avg_response_time_ms": avg_resp,
+            "unique_visitors_approx": int(row["unique_visitors_approx"]),
+            "client_errors_4xx": int(row["client_errors_4xx"] or 0),
+            "server_errors_5xx": int(row["server_errors_5xx"] or 0),
+            "avg_response_time_ms": round(float(row["avg_response_time_ms"] or 0.0), 2),
             "spike_threshold": int(spike_threshold),
             "is_spike": requests >= int(spike_threshold),
             "last_batch_id": int(batch_id),
@@ -79,18 +68,19 @@ def write_summary_batch(batch_df, batch_id: int, spike_threshold: int) -> None:
             "window_start": start,
             "payload": payload,
         })
-
-        # Run multi-rule anomaly detection (spikes, error surges, high latency)
-        window_alerts = detector.evaluate_window(
-            window_start=start,
-            window_end=end,
-            requests=requests,
-            client_errors_4xx=client_errs,
-            server_errors_5xx=server_errs,
-            avg_response_time_ms=avg_resp,
-            unique_visitors=unique_visitors,
-        )
-        alert_records.extend(window_alerts)
+        if payload["is_spike"]:
+            alert_records.append({
+                "window_start": start,
+                "window_end": end,
+                "alert_type": "TRAFFIC_SPIKE",
+                "requests": requests,
+                "threshold": int(spike_threshold),
+                "reason": (
+                    f"{requests} requests in the one-minute window; "
+                    f"configured threshold is {spike_threshold}"
+                ),
+                "unique_visitors_approx": payload["unique_visitors_approx"],
+            })
 
     metrics_written = upsert_metrics(metric_records)
     alerts_written = upsert_alerts(alert_records)
@@ -140,7 +130,17 @@ def build_spark_session():
     from pyspark.sql import SparkSession
     return (
         SparkSession.builder
+        .master(env("SPARK_MASTER", "local[*]"))
+        .config("spark.driver.host", env("SPARK_DRIVER_HOST", "127.0.0.1"))
+        .config("spark.driver.bindAddress", env("SPARK_DRIVER_BIND_ADDRESS", "0.0.0.0"))
+        .config("spark.driver.port", env("SPARK_DRIVER_PORT", "7079"))
+        .config("spark.blockManager.port", env("SPARK_BLOCKMANAGER_PORT", "7080"))
+        .config("spark.hadoop.dfs.client.use.datanode.hostname", "true")
         .appName(env("SPARK_APP_NAME", "WebsiteTrafficStreaming"))
+        .config(
+            "spark.jars.packages",
+            "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.3",
+        )
         .config("spark.sql.shuffle.partitions",
                 env("SPARK_SQL_SHUFFLE_PARTITIONS", "4"))
         .config("spark.sql.session.timeZone", "UTC")
@@ -159,9 +159,6 @@ def event_schema():
         StructField("page", StringType(), True),
         StructField("status_code", IntegerType(), True),
         StructField("response_time_ms", IntegerType(), True),
-        StructField("response_time", IntegerType(), True),
-        StructField("request_method", StringType(), True),
-        StructField("user_agent", StringType(), True),
     ])
 
 def kafka_events(spark, schema):
